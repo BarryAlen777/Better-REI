@@ -1,0 +1,37 @@
+plugins { id 'java'; id 'net.minecraftforge.gradle' version '[6.0,6.2)' }
+version = '1.0.0-r46'
+group = 'cn.blockforge.generated.betterrei'
+base { archivesName = 'better_rei' }
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+minecraft { mappings channel: 'official', version: '1.20.1' }
+repositories {
+    maven { url = 'https://maven.shedaniel.me/' }
+    maven { url = 'https://repo.spongepowered.org/maven/' }
+}
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.0'
+    // REI 12.1.785（1.20.1 最终版）：编译期可见，运行期用玩家自己装的 REI
+    compileOnly('me.shedaniel:RoughlyEnoughItems-forge:12.1.785') { transitive = false }
+    compileOnly('me.shedaniel.cloth:cloth-config-forge:11.1.136') { transitive = false }
+    compileOnly('dev.architectury:architectury-forge:9.0.7') { transitive = false }
+    // Mixin：Forge 47.4.0 启动类路径自带，这里只取注解 API
+    compileOnly 'org.spongepowered:mixin:0.8.5'
+}
+jar {
+    // MIT 协议正文随产物一起分发
+    from('LICENSE')
+    manifest {
+        attributes([
+            'MixinConfigs': 'better_rei.mixins.json'
+        ])
+    }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+processResources {
+    def props = [mod_id: 'better_rei', mod_name: 'Better REI', mod_version: project.version,
+                 minecraft_version: '1.20.1', forge_version: '47.4.0']
+    inputs.properties props
+    filteringCharset = 'UTF-8'
+    filesMatching('META-INF/mods.toml') { expand props }
+}
+jar.finalizedBy('reobfJar')

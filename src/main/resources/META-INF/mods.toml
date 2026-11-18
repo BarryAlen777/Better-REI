@@ -1,0 +1,35 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="BarryAlen777"
+credits="以 MIT 协议开源。感谢 RoughlyEnoughItems（shedaniel）与 EMI 的思路启发。"
+clientSideOnly=true
+displayTest="IGNORE_ALL_VERSION"
+logoFile="assets/better_rei/textures/logo.png"
+description='''为 Forge 1.20.1 的 REI (Roughly Enough Items) 提供性能优化与 EMI 风格配方树（Ctrl+R 打开）。'''
+
+[[dependencies.${mod_id}]]
+modId="forge"
+mandatory=true
+versionRange="[47.2,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="minecraft"
+mandatory=true
+versionRange="[${minecraft_version}]"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="roughlyenoughitems"
+mandatory=false
+versionRange="[12.1.785]"
+ordering="AFTER"
+side="CLIENT"
