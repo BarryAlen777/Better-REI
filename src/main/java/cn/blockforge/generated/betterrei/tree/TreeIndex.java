@@ -164,24 +164,25 @@ public final class TreeIndex {
     private static Collection<Display> fallbackLookup(EntryStack<?> stack, boolean output) {
         FallbackIndex idx = ensureFallback();
         Map<Long, List<Display>> postings = output ? idx.byOutput : idx.byInput;
-        List<Display> candidates = postings.get(EntryStacks.hashFuzzy(stack));
-        if (candidates == null || candidates.isEmpty()) {
+        Set<Display> result = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectFallbackMatches(postings, stack, output, result);
+        if (result.isEmpty()) {
             EntryStack<?> wildcard = stack.wildcard();
             if (!EntryStacks.equalsFuzzy(wildcard, stack)) {
-                candidates = postings.get(EntryStacks.hashFuzzy(wildcard));
-            }
-        }
-        // identity set: same dedup semantics as the cached path; the tree
-        // sorts the result by (category title, registration index) anyway.
-        Set<Display> result = Collections.newSetFromMap(new IdentityHashMap<>());
-        if (candidates != null) {
-            for (Display display : candidates) {
-                if (contains(display, stack, output)) {
-                    result.add(display);
-                }
+                collectFallbackMatches(postings, wildcard, output, result);
             }
         }
         return result;
+    }
+
+    private static void collectFallbackMatches(Map<Long, List<Display>> postings, EntryStack<?> query,
+                                               boolean output, Set<Display> result) {
+        List<Display> candidates = postings.get(EntryStacks.hashFuzzy(query));
+        if (candidates == null) return;
+        for (Display display : candidates) {
+            // The hash only narrows the search. Match against the same query that found the bucket.
+            if (contains(display, query, output)) result.add(display);
+        }
     }
 
     // --------------------------------------------------------------- lookups

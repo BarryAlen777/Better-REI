@@ -59,7 +59,7 @@ public final class BetterReiConfig {
         TREE_MAX_DEPTH = b.defineInRange("treeMaxDepth", 8, 2, 32);
         b.comment("Recipe category ids the tree's category filter hides (set by clicking '分类筛选' in the tree,",
                 "no need to edit by hand). Example: [\"some_mod:dismantling\"].");
-        TREE_HIDDEN_CATEGORIES = b.defineList("treeHiddenCategories", List.of(), o -> o instanceof String);
+        TREE_HIDDEN_CATEGORIES = b.defineListAllowEmpty("treeHiddenCategories", List.of(), o -> o instanceof String);
         b.pop();
         SPEC = b.build();
     }

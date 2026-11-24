@@ -167,9 +167,14 @@ public final class BetterReiVersionGuard {
     private static String probe() {
         String found;
         try {
-            found = ModList.get().getModContainerById(REI_MOD_ID)
-                    .map(c -> c.getModInfo().getVersion().toString())
-                    .orElse(VERSION_MISSING);
+            ModList mods = ModList.get();
+            if (mods == null) return VERSION_UNKNOWN;
+            // REI may discover plugins while Forge is still constructing the mod instances.
+            // Forge's scanned metadata is already available then, even when a container isn't.
+            found = mods.getMods().stream()
+                    .filter(info -> REI_MOD_ID.equals(info.getModId()))
+                    .map(info -> info.getVersion().toString())
+                    .findFirst().orElse(VERSION_MISSING);
         } catch (Throwable t) {
             LOGGER.debug("Could not read the installed REI version", t);
             return VERSION_UNKNOWN;

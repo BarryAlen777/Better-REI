@@ -163,6 +163,7 @@ public class RecipeTreeScreen extends Screen {
         int altCount = 1;
         /** position of this recipe row inside the parent item's pendingRecipes (P2-4) */
         int recipeIndex = -1;
+        String recipeKey;
         /** position of this ingredient inside the parent display's entry list (P2-4) */
         int ingredientIndex = -1;
         boolean expanded, built, cycle;
@@ -511,13 +512,15 @@ public class RecipeTreeScreen extends Screen {
         // audit r38 P2-8：注册表里"真实存在"的全部 id——交集按它算，
         // 不是只按成功建出画面的行（某分类只是图标坏了，不该顺手取消它的隐藏）
         Set<String> live = new HashSet<>();
+        boolean complete = true;
         try {
             for (CategoryRegistry.CategoryConfiguration<?> cfg : CategoryRegistry.getInstance()) {
                 String id;
                 try {
                     id = cfg.getCategoryIdentifier().getIdentifier().toString();
                 } catch (Throwable ignored) {
-                    continue; // 连 id 都取不出来的注册项，交集也没法认它
+                    complete = false;
+                    continue;
                 }
                 live.add(id);
                 try {
@@ -528,7 +531,7 @@ public class RecipeTreeScreen extends Screen {
                 }
             }
         } catch (Throwable ignored) {
-            // REI 还没就绪：空列表，面板显示"暂无分类"
+            complete = false;
         }
         out.sort(Comparator.comparing(CategoryOption::title));
         filterOptions = out;
@@ -537,7 +540,7 @@ public class RecipeTreeScreen extends Screen {
         // r40 P2-1：但重载中途注册表可能只填了一半（live 非空却缺项），retainAll
         // 会把仍然有效的隐藏 id 当死 id 删掉并立刻写盘——重载期间跳过清理，
         // 下拉列表照常显示，下一次点开再清（最坏只是僵尸 id 晚一轮退场）。
-        if (!live.isEmpty() && !hiddenCategories.isEmpty() && !PluginManager.areAnyReloading()) {
+        if (complete && !live.isEmpty() && !hiddenCategories.isEmpty() && !PluginManager.areAnyReloading()) {
             if (hiddenCategories.retainAll(live)) {
                 BetterReiConfig.setTreeHiddenCategories(new ArrayList<>(hiddenCategories));
                 if (filterButton != null) filterButton.setMessage(filterLabel());
@@ -588,13 +591,14 @@ public class RecipeTreeScreen extends Screen {
      * audit r12 P2-2: a route used to carry positions only (the 3rd recipe,
      * the 2nd ingredient), so after a reload that changed recipe order or
      * content it cheerfully re-expanded a *different* branch. Every route step
-     * now also carries a content key — category + output hashes for a recipe
-     * row, the ingredient's fuzzy hash for an item row. A step matches a row
+     * now also carries a content key: category, inputs and outputs for a recipe
+     * row, and the ingredient's fuzzy hash for an item row. A step matches a row
      * with the same key, and a branch whose key is gone stays collapsed.
      */
     private void reloadTree() {
         cancelExpandAll();
         titleCache.clear(); // categories may have changed with the reload
+        boolean rootWasExpanded = root.expanded;
         List<Route> routes = captureExpandedRoutes();
         double keepScroll = this.scroll;
         EntryStack<?> stack = this.root.stack;
@@ -602,9 +606,11 @@ public class RecipeTreeScreen extends Screen {
         this.root.stack = stack;
         this.root.need = targetCount;
         this.generation = TreeIndex.generation();
-        this.root.expanded = true;
-        buildChildren(this.root);
-        restoreRoutes(routes);
+        this.root.expanded = rootWasExpanded;
+        if (rootWasExpanded) {
+            buildChildren(this.root);
+            restoreRoutes(routes);
+        }
         this.scroll = keepScroll;
         rebuildFlat(); // also clamps the scroll to the new content height
     }
@@ -624,6 +630,7 @@ public class RecipeTreeScreen extends Screen {
         if (!node.expanded) return;
         if (node != root) out.add(new Route(toArray(prefix), keys.toArray(new String[0])));
         for (Node child : node.children) {
+            if (!child.expanded) continue;
             if (child.kind == RECIPE) {
                 prefix.add(child.recipeIndex);
                 keys.add(recipeKey(child));
@@ -648,14 +655,30 @@ public class RecipeTreeScreen extends Screen {
 
     /** Stable identity of a recipe row across a registry reload. */
     private static String recipeKey(Node recipeNode) {
-        Display display = recipeNode.display;
-        StringBuilder key = new StringBuilder(String.valueOf(display.getCategoryIdentifier()));
-        for (EntryIngredient ingredient : display.getOutputEntries()) {
-            for (EntryStack<?> stack : ingredient) {
-                key.append('|').append(EntryStacks.hashFuzzy(stack));
+        if (recipeNode.recipeKey == null) {
+            Display display = recipeNode.display;
+            StringBuilder key = new StringBuilder(String.valueOf(display.getCategoryIdentifier()));
+            var location = display.getDisplayLocation();
+            if (location.isPresent()) {
+                key.append('|').append(location.get());
+            } else {
+                appendIngredientKeys(key, display.getInputEntries());
+                key.append('>');
+                appendIngredientKeys(key, display.getOutputEntries());
             }
+            recipeNode.recipeKey = key.toString();
         }
-        return key.toString();
+        return recipeNode.recipeKey;
+    }
+
+    private static void appendIngredientKeys(StringBuilder key, List<EntryIngredient> ingredients) {
+        for (EntryIngredient ingredient : ingredients) {
+            key.append('[');
+            for (EntryStack<?> stack : ingredient) {
+                key.append(EntryStacks.hashExact(stack)).append(':').append(TreeIndex.amountOf(stack)).append(',');
+            }
+            key.append(']');
+        }
     }
 
     private static String stackKey(EntryStack<?> stack) {
@@ -1707,16 +1730,21 @@ public class RecipeTreeScreen extends Screen {
     private static void drawStackIcon(GuiGraphics g, EntryStack<?> stack, int x, int y) {
         if (stack != null && stack.getType() == VanillaEntryTypes.ITEM
                 && stack.getValue() instanceof ItemStack item && !item.isEmpty()) {
+            PoseStack pose = g.pose();
+            PoseStack.Pose original = pose.last();
+            pose.pushPose();
             try {
-                PoseStack pose = g.pose();
-                pose.pushPose();
                 pose.translate((double) x, (double) y, 0.0);
                 pose.scale(ICON / 16.0F, ICON / 16.0F, 1.0F);
                 g.renderItem(item, 0, 0);
-                pose.popPose();
                 return;
-            } catch (Throwable ignored) {
-                // 类型说谎 / REI 版本怪异：退回 REI 通道
+            } catch (RuntimeException | LinkageError ignored) {
+                // 原版或模组的物品绘制器失败时，仍尝试 REI 的绘制器。
+            } finally {
+                // 原版 renderItem 在绘制中途抛错时也可能留下一层矩阵。
+                while (pose.last() != original && !pose.clear()) {
+                    pose.popPose();
+                }
             }
         }
         if (stack != null) {

@@ -1,5 +1,6 @@
 package cn.blockforge.generated.betterrei.mixin;
 
+import cn.blockforge.generated.betterrei.compat.RepairDisplayPatch;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
@@ -56,7 +57,12 @@ public class BetterReiMixinPlugin implements IMixinConfigPlugin {
             "EntryListSortCacheMixin",
             "EntryRegistryCacheClearMixin",
             "DisplayReloadTrackerMixin",
-            "ViewsImplFastLookupMixin");
+            "ViewsImplFastLookupMixin",
+            "RepairDisplayGuardMixin",
+            "PluginDiscoveryFuseMixin",
+            "PluginManagerFuseMixin",
+            "PluginWrapperFuseMixin",
+            "ReipcProviderFuseMixin");
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -79,12 +85,22 @@ public class BetterReiMixinPlugin implements IMixinConfigPlugin {
     @Override
     public List<String> getMixins() {
         try {
-            return reiPresent() ? MIXINS : Collections.emptyList();
+            return isDedicatedServer() || !reiPresent() ? Collections.emptyList() : MIXINS;
         } catch (Throwable t) {
             // A broken probe must never cost the optimizations (audit r12 P2-1):
             // worst case the mixins are registered and Mixin skips the ones it
             // cannot apply, exactly like before this plugin existed.
             return MIXINS;
+        }
+    }
+
+    private static boolean isDedicatedServer() {
+        try {
+            Class<?> loader = Class.forName(FML_LOADER_CLASS, false, BetterReiMixinPlugin.class.getClassLoader());
+            return loader.getMethod("getDist").invoke(null) instanceof Enum<?> dist
+                    && dist.name().equals("DEDICATED_SERVER");
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return false;
         }
     }
 
@@ -158,5 +174,9 @@ public class BetterReiMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+        if (targetClassName.equals(RepairDisplayPatch.TARGET)
+                && mixinClassName.equals("cn.blockforge.generated.betterrei.mixin.RepairDisplayGuardMixin")) {
+            RepairDisplayPatch.apply(targetClass);
+        }
     }
 }
